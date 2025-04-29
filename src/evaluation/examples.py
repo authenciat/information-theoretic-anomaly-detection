@@ -18,9 +18,12 @@ from src.evaluation.metrics import (
 )
 
 
-def compare_with_baselines():
+def compare_with_baselines(use_adaptive=True):
     """
     Compare the information-theoretic anomaly detector with baseline methods.
+    
+    Args:
+        use_adaptive: Whether to use adaptive bandwidth selection
     """
     print("Loading and preprocessing data...")
     X_train, X_test, y_test, transformer = load_processed_data(
@@ -33,8 +36,26 @@ def compare_with_baselines():
     
     # Initialize models
     print("Initializing models...")
+    
+    # For the InfoTheoretic model, use adaptive bandwidth if specified
+    if use_adaptive:
+        print("Using adaptive bandwidth selection for InfoTheoreticAnomalyDetector")
+        info_model = InfoTheoreticAnomalyDetector(
+            n_components=20, 
+            bandwidth=None,  # None triggers automatic bandwidth selection
+            n_neighbors=20,
+            #weights=[0.4, 0.1, 0.4, 0.1]  # Recommended weights for better precision
+        )
+    else:
+        print("Using fixed bandwidth for InfoTheoreticAnomalyDetector")
+        info_model = InfoTheoreticAnomalyDetector(
+            n_components=20, 
+            bandwidth=0.1,
+            n_neighbors=20
+        )
+    
     models = {
-        'InfoTheoretic': InfoTheoreticAnomalyDetector(n_components=20, bandwidth=0.1),
+        'InfoTheoretic': info_model,
         'IsolationForest': IsolationForest(random_state=42, contamination=0.1),
         'OneClassSVM': OneClassSVM(nu=0.1, kernel='rbf'),
         'LOF': LocalOutlierFactor(n_neighbors=20, contamination=0.1, novelty=True)
@@ -46,12 +67,31 @@ def compare_with_baselines():
         print(f"Training {name}...")
         model.fit(X_train)
     
+    # Optionally optimize weights if we have validation data
+    if use_adaptive and y_test is not None:
+        # Create a small validation set from the test set
+        from sklearn.model_selection import train_test_split
+        X_val, X_test_reduced, y_val, y_test_reduced = train_test_split(
+            X_test, y_test, test_size=0.7, random_state=42, stratify=y_test
+        )
+        
+        print("Optimizing weights for InfoTheoreticAnomalyDetector...")
+        optimization_results = models['InfoTheoretic'].optimize_weights(X_val, y_val)
+        print(f"Optimized weights: {optimization_results['best_weights']}")
+        print(f"Validation metrics: {optimization_results['metrics']}")
+        
+        # Use the reduced test set to avoid data leakage
+        X_test = X_test_reduced
+        y_test = y_test_reduced
+    
     # Get anomaly scores for each model
     print("Generating anomaly scores...")
     scores = {}
     
-    # Information-theoretic model
-    scores['InfoTheoretic'] = models['InfoTheoretic'].score_samples(X_test)['combined_score']
+    # Information-theoretic model (use adaptive local bandwidth if specified)
+    scores['InfoTheoretic'] = models['InfoTheoretic'].score_samples(
+        X_test, use_adaptive_local=use_adaptive
+    )['combined_score']
     
     # Isolation Forest (negative of decision_function for consistency)
     scores['IsolationForest'] = -models['IsolationForest'].decision_function(X_test)
@@ -128,17 +168,21 @@ if __name__ == "__main__":
     # Default to running both parts
     run_comparison = True
     run_feature_analysis = True
+    use_adaptive = True
     
     # Parse command line arguments if provided
     if len(sys.argv) > 1:
-        if sys.argv[1] == "comparison":
-            run_feature_analysis = False
-        elif sys.argv[1] == "features":
-            run_comparison = False
+        for arg in sys.argv[1:]:
+            if arg == "comparison":
+                run_feature_analysis = False
+            elif arg == "features":
+                run_comparison = False
+            elif arg == "noadaptive":
+                use_adaptive = False
     
     if run_comparison:
         print("Running comparison with baseline methods...")
-        comparison_results, threshold_results = compare_with_baselines()
+        comparison_results, threshold_results = compare_with_baselines(use_adaptive=use_adaptive)
     
     if run_feature_analysis:
         print("\nAnalyzing feature performance...")
