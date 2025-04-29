@@ -335,9 +335,9 @@ class InfoTheoreticAnomalyDetector:
             # Define a grid of weight combinations to try
             # The weights should sum to 1
             weight_grid = []
-            for w1 in np.linspace(0.1, 0.7, 4):  # basic score weight
-                for w2 in np.linspace(0.1, 0.4, 3):  # local entropy weight
-                    for w3 in np.linspace(0.1, 0.4, 3):  # relative entropy weight
+            for w1 in np.linspace(0.4, 0.65, 6):  # basic score weight
+                for w2 in np.linspace(0.00, 0.15, 4):  # local entropy weight
+                    for w3 in np.linspace(0.00, 0.15, 4):  # relative entropy weight
                         w4 = 1.0 - (w1 + w2 + w3)  # differential entropy weight
                         if 0.05 <= w4 <= 0.4:  # ensure w4 is reasonable
                             weight_grid.append([w1, w2, w3, w4])
