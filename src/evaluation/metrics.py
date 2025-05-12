@@ -18,6 +18,9 @@ from sklearn.metrics import (
     roc_auc_score
 )
 
+# Import feature analysis functions
+from .feature_analysis import feature_performance_analysis, visualize_anomaly_explanation
+
 
 def evaluate_anomaly_detector(y_true, y_pred_scores, threshold=None, plot=True):
     """
@@ -248,11 +251,11 @@ def evaluate_threshold_sensitivity(y_true, y_pred_scores, thresholds=None, n_thr
     Args:
         y_true: True binary labels (0=normal, 1=anomaly)
         y_pred_scores: Predicted anomaly scores
-        thresholds: List of thresholds to evaluate. If None, generate n_thresholds evenly spaced values.
-        n_thresholds: Number of thresholds to generate if thresholds is None
+        thresholds: List of thresholds to evaluate (if None, generate n_thresholds evenly spaced)
+        n_thresholds: Number of thresholds to generate if not provided
         
     Returns:
-        DataFrame with metrics at each threshold and plots
+        DataFrame with metrics at each threshold
     """
     # Generate thresholds if not provided
     if thresholds is None:
@@ -349,182 +352,4 @@ def evaluate_threshold_sensitivity(y_true, y_pred_scores, thresholds=None, n_thr
     plt.tight_layout()
     plt.show()
     
-    return results_df
-
-
-def evaluate_feature_importance(model, feature_names, X, y, n_top_features=10, plot=True):
-    """
-    Evaluate feature importance for anomaly detection.
-    
-    Args:
-        model: Trained anomaly detection model with feature_importance_ attribute
-               or coef_ attribute (like InfoTheoreticAnomalyDetector)
-        feature_names: List of feature names
-        X: Feature matrix
-        y: True labels
-        n_top_features: Number of top features to visualize
-        plot: Whether to plot feature importance
-        
-    Returns:
-        DataFrame with feature importance scores
-    """
-    # Get feature importance
-    if hasattr(model, 'feature_importance_'):
-        importance = model.feature_importance_
-    elif hasattr(model, 'coef_'):
-        importance = np.abs(model.coef_)
-    else:
-        raise ValueError("Model doesn't have feature_importance_ or coef_ attribute")
-    
-    # Create DataFrame with feature importance
-    importance_df = pd.DataFrame({
-        'Feature': feature_names,
-        'Importance': importance
-    })
-    
-    # Sort by importance
-    importance_df = importance_df.sort_values('Importance', ascending=False)
-    
-    # Plot feature importance if requested
-    if plot:
-        # Get top features
-        top_features = importance_df.head(n_top_features)
-        
-        plt.figure(figsize=(10, 6))
-        sns.barplot(x='Importance', y='Feature', data=top_features)
-        plt.title(f'Top {n_top_features} Features by Importance')
-        plt.tight_layout()
-        plt.show()
-    
-    return importance_df
-
-
-def feature_performance_analysis(X, y, feature_names=None, n_features=5):
-    """
-    Analyze how individual features perform for anomaly detection.
-    
-    Args:
-        X: Feature matrix
-        y: True labels
-        feature_names: List of feature names (if None, use column indices)
-        n_features: Number of top features to visualize
-        
-    Returns:
-        DataFrame with feature performance metrics and visualization
-    """
-    # Ensure X is a DataFrame
-    if not isinstance(X, pd.DataFrame):
-        X = pd.DataFrame(X)
-        
-    # Get feature names if not provided
-    if feature_names is None:
-        feature_names = X.columns.tolist()
-    
-    # Initialize list to store results
-    feature_metrics = []
-    
-    # Evaluate each feature individually
-    for i, feature in enumerate(feature_names):
-        # Get feature values
-        feature_values = X.iloc[:, i] if isinstance(feature, int) else X[feature]
-        
-        # Calculate ROC AUC for the feature
-        try:
-            auc_score = roc_auc_score(y, feature_values)
-            # If AUC < 0.5, invert the feature
-            if auc_score < 0.5:
-                auc_score = roc_auc_score(y, -feature_values)
-                invert = True
-            else:
-                invert = False
-                
-            # Calculate other metrics
-            fpr, tpr, _ = roc_curve(y, feature_values if not invert else -feature_values)
-            roc_auc = auc(fpr, tpr)
-            
-            # Add to results
-            feature_metrics.append({
-                'Feature': feature,
-                'ROC_AUC': roc_auc,
-                'Inverted': invert
-            })
-        except:
-            # Skip features that fail (e.g., constant features)
-            continue
-    
-    # Convert to DataFrame and sort by ROC AUC
-    metrics_df = pd.DataFrame(feature_metrics)
-    metrics_df = metrics_df.sort_values('ROC_AUC', ascending=False)
-    
-    # Get top features
-    top_features = metrics_df.head(n_features)
-    
-    # Plot ROC curves for top features
-    plt.figure(figsize=(12, 8))
-    
-    for _, row in top_features.iterrows():
-        feature = row['Feature']
-        inverted = row['Inverted']
-        
-        # Get feature values
-        feature_idx = feature_names.index(feature) if isinstance(feature, str) else feature
-        feature_values = X.iloc[:, feature_idx] if isinstance(feature, int) else X[feature]
-        
-        if inverted:
-            feature_values = -feature_values
-            
-        fpr, tpr, _ = roc_curve(y, feature_values)
-        roc_auc = auc(fpr, tpr)
-        
-        plt.plot(fpr, tpr, label=f'{feature} (AUC = {roc_auc:.3f})')
-    
-    plt.plot([0, 1], [0, 1], 'k--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title(f'ROC Curves for Top {n_features} Features')
-    plt.legend(loc="lower right")
-    plt.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.show()
-    
-    # Plot feature distributions for normal vs anomaly
-    plt.figure(figsize=(15, 10))
-    
-    for i, (_, row) in enumerate(top_features.iterrows()):
-        feature = row['Feature']
-        inverted = row['Inverted']
-        
-        plt.subplot(2, 3, i+1)
-        
-        # Get feature values
-        feature_idx = feature_names.index(feature) if isinstance(feature, str) else feature
-        feature_values = X.iloc[:, feature_idx] if isinstance(feature, int) else X[feature]
-        
-        if inverted:
-            feature_values = -feature_values
-            feature = f"{feature} (inverted)"
-        
-        # Split by class
-        normal_values = feature_values[y == 0]
-        anomaly_values = feature_values[y == 1]
-        
-        # Plot distributions
-        sns.histplot(normal_values, color='blue', alpha=0.5, label='Normal', kde=True)
-        sns.histplot(anomaly_values, color='red', alpha=0.5, label='Anomaly', kde=True)
-        
-        plt.title(f'{feature}')
-        plt.xlabel('Value')
-        plt.ylabel('Frequency')
-        plt.legend()
-        
-        # Stop after n_features
-        if i >= n_features - 1:
-            break
-    
-    plt.tight_layout()
-    plt.show()
-    
-    return metrics_df 
+    return results_df 

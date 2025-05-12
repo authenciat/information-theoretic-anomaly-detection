@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-from src.features.transformations import AnomalyFeatureTransformer, engineer_kdd_cup_features
+from .transformations import AnomalyFeatureTransformer, engineer_kdd_cup_features
 
 # Define column names for the KDD Cup dataset
 KDD_COLUMNS = [
